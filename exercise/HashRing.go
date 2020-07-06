@@ -14,16 +14,16 @@ import (
 
 func main() {
 	nodeIds := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	ring := newRing(nodeIds, crc32.NewIEEE())
-	for i := 1; i < 200; i++ {
-		ring.addNode(10 + i)
-	}
-
 	test(newRing(nodeIds, crc32.NewIEEE()))
 	test(newRing(nodeIds, fnv.New32()))
 	test(newRing(nodeIds, adler32.New()))
 	test(newRing(nodeIds, &xxhashAdapter{}))
-
+	//扩容后
+	ring := newRing(nodeIds, crc32.NewIEEE())
+	for i := 1; i < 11; i++ {
+		ring.addNode(10 + i)
+	}
+	test(ring)
 }
 
 type xxhashAdapter struct {
@@ -119,29 +119,24 @@ func (r *Ring) addNode(newNodeId int) error {
 	if len(r.actualNodes) == 0 {
 		return errors.New("no actual nodes")
 	}
-	//rebalance的逻辑:新增节点讨'百家饭'，从'大户'开始吃,一家一口，吃到新节点virtual node count达到virtual nodes count/actual nodes count均值为止
+	//rebalance的逻辑:新增节点讨'百家饭'，从'大户'开始吃,一家一口，吃到新节点virtual node count达到virtual nodes quotient/actual nodes count均值为止
 	//不考虑并发
 	newNodes := make([]*Node, 0)
 	nodeSorter := r.getNodeSorter()
 	sort.Sort(sort.Reverse(nodeSorter))
 	//sort.Sort(nodeSorter)
-	count := len(r.virtualNodes) / (len(r.actualNodes) + 1) / len(r.actualNodes)
-	for i := 0; i < count; i++ {
-		for _, nodes := range nodeSorter {
-			n := &Node{newNodeId, nodes[i].index}
-			newNodes = append(newNodes, n)
-			r.virtualNodesMap[nodes[i].id] = r.virtualNodesMap[nodes[i].id][i+1:]
-		}
-	}
-	count = len(r.virtualNodes) / (len(r.actualNodes) + 1) % len(r.actualNodes)
+	quotient := len(r.virtualNodes) / (len(r.actualNodes) + 1) / len(r.actualNodes)
+	mod := len(r.virtualNodes) / (len(r.actualNodes) + 1) % len(r.actualNodes)
 	for i, nodes := range nodeSorter {
-		if i < count {
-			n := &Node{newNodeId, nodes[0].index}
-			newNodes = append(newNodes, n)
-			r.virtualNodesMap[nodes[0].id] = r.virtualNodesMap[nodes[0].id][1:]
-		} else {
-			break
+		j := quotient
+		if i < mod {
+			j += 1
 		}
+		for n := 0; n < j; n++ {
+			n := &Node{newNodeId, nodes[n].index}
+			newNodes = append(newNodes, n)
+		}
+		r.virtualNodesMap[nodes[0].id] = r.virtualNodesMap[nodes[0].id][j:]
 	}
 
 	r.actualNodes = append(r.actualNodes, &Node{id: newNodeId})
@@ -169,13 +164,10 @@ func (r *Ring) getNodeSorter() NodeSorter {
 	return virtualNodes
 }
 
-// Len is the number of elements in the collection.
 func (ns NodeSorter) Len() int {
 	return len(ns)
 }
 
-// Less reports whether the element with
-// index i should sort before the element with index j.
 func (ns NodeSorter) Less(i, j int) bool {
 	if len(ns[i]) == len(ns[j]) && len(ns[i]) != 0 && len(ns[j]) != 0 {
 		return ns[i][0].index < ns[j][0].index
