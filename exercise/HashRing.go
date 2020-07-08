@@ -14,12 +14,22 @@ import (
 
 func main() {
 	nodeIds := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	test(newRing(nodeIds, crc32.NewIEEE()))
-	test(newRing(nodeIds, fnv.New32()))
-	test(newRing(nodeIds, adler32.New()))
-	test(newRing(nodeIds, &xxhashAdapter{}))
+	test(newRing(nodeIds, func() hash.Hash32 {
+		return crc32.NewIEEE()
+	}))
+	test(newRing(nodeIds, func() hash.Hash32 {
+		return fnv.New32()
+	}))
+	test(newRing(nodeIds, func() hash.Hash32 {
+		return adler32.New()
+	}))
+	test(newRing(nodeIds, func() hash.Hash32 {
+		return new(xxhashAdapter)
+	}))
 	//扩容后
-	ring := newRing(nodeIds, crc32.NewIEEE())
+	ring := newRing(nodeIds, func() hash.Hash32 {
+		return crc32.NewIEEE()
+	})
 	for i := 1; i < 11; i++ {
 		ring.addNode(10 + i)
 	}
@@ -52,7 +62,7 @@ func test(ring *Ring) {
 	for _, v := range counter {
 		sum += math.Pow(float64(v)-float64(average), 2)
 	}
-	fmt.Printf(fmt.Sprintf("%T 标准差:%v\n", ring.hash, math.Sqrt(sum/(float64(len(ring.actualNodes))))))
+	fmt.Printf(fmt.Sprintf("%T 标准差:%v\n", ring.hasher(), math.Sqrt(sum/(float64(len(ring.actualNodes))))))
 }
 
 type Ring struct {
@@ -62,7 +72,7 @@ type Ring struct {
 	virtualNodesMap map[int][]*Node
 	actualNodes     []*Node
 	step            int
-	hash            hash.Hash32
+	hasher          func() hash.Hash32
 }
 
 type Node struct {
@@ -70,13 +80,13 @@ type Node struct {
 	index int
 }
 
-func newRing(nodeIds []int, hash hash.Hash32) *Ring {
+func newRing(nodeIds []int, hasher func() hash.Hash32) *Ring {
 	ring := &Ring{
 		virtualCount:    200,
 		virtualNodes:    make([]*Node, 0),
 		actualNodes:     make([]*Node, 0),
 		virtualNodesMap: map[int][]*Node{},
-		hash:            hash,
+		hasher:          hasher,
 		size:            1000000,
 	}
 	for nodeId := range nodeIds {
@@ -92,7 +102,7 @@ func newRing(nodeIds []int, hash hash.Hash32) *Ring {
 			i++
 		}
 	}
-	ring.rebuildVirtualNodes()
+	ring.rebalanceVirtualNodes()
 	return ring
 }
 
@@ -100,19 +110,13 @@ func (r *Ring) getNode(key string) (node int, error error) {
 	if len(r.virtualNodes) == 0 {
 		return 0, errors.New("no actual nodes")
 	}
-	r.hash.Reset()
-	r.hash.Write([]byte(key))
+	hash := r.hasher()
+	hash.Reset()
+	hash.Write([]byte(key))
 	//fmt.Println(hash.Sum32())
-	index := int(r.hash.Sum32() % uint32(r.size))
+	index := int(hash.Sum32() % uint32(r.size))
 	//fmt.Println(index)
-	for _, an := range r.virtualNodes {
-		if index > an.index {
-			continue
-		} else {
-			return an.id, nil
-		}
-	}
-	return r.virtualNodes[0].id, nil
+	return r.virtualNodes[(index/r.step+1)%len(r.virtualNodes)].id, nil
 }
 
 func (r *Ring) addNode(newNodeId int) error {
@@ -141,11 +145,11 @@ func (r *Ring) addNode(newNodeId int) error {
 
 	r.actualNodes = append(r.actualNodes, &Node{id: newNodeId})
 	r.virtualNodesMap[newNodeId] = newNodes
-	r.rebuildVirtualNodes()
+	r.rebalanceVirtualNodes()
 	return nil
 }
 
-func (r *Ring) rebuildVirtualNodes() {
+func (r *Ring) rebalanceVirtualNodes() {
 	nodes := make([]*Node, 0)
 	for _, v := range r.virtualNodesMap {
 		nodes = append(nodes, v...)
@@ -176,7 +180,6 @@ func (ns SortByNodeCount) Less(i, j int) bool {
 	}
 }
 
-// Swap swaps the elements with indexes i and j.
 func (ns SortByNodeCount) Swap(i, j int) {
 	tmp := ns[i]
 	ns[i] = ns[j]
