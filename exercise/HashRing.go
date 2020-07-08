@@ -52,7 +52,7 @@ func test(ring *Ring) {
 	for _, v := range counter {
 		sum += math.Pow(float64(v)-float64(average), 2)
 	}
-	fmt.Printf(fmt.Sprintf("%T 标准差:%v\n", ring.hash, math.Sqrt(sum)))
+	fmt.Printf(fmt.Sprintf("%T 标准差:%v\n", ring.hash, math.Sqrt(sum/(float64(len(ring.actualNodes))))))
 }
 
 type Ring struct {
@@ -150,13 +150,13 @@ func (r *Ring) rebuildVirtualNodes() {
 	for _, v := range r.virtualNodesMap {
 		nodes = append(nodes, v...)
 	}
-	sort.Sort(VirtualNodeSorter(nodes))
+	sort.Sort(SortByIndex(nodes))
 	r.virtualNodes = nodes
 }
 
-type NodeSorter [][]*Node
+type SortByNodeCount [][]*Node
 
-func (r *Ring) getNodeSorter() NodeSorter {
+func (r *Ring) getNodeSorter() SortByNodeCount {
 	virtualNodes := make([][]*Node, 0)
 	for _, vn := range r.virtualNodesMap {
 		virtualNodes = append(virtualNodes, vn)
@@ -164,11 +164,11 @@ func (r *Ring) getNodeSorter() NodeSorter {
 	return virtualNodes
 }
 
-func (ns NodeSorter) Len() int {
+func (ns SortByNodeCount) Len() int {
 	return len(ns)
 }
 
-func (ns NodeSorter) Less(i, j int) bool {
+func (ns SortByNodeCount) Less(i, j int) bool {
 	if len(ns[i]) == len(ns[j]) && len(ns[i]) != 0 && len(ns[j]) != 0 {
 		return ns[i][0].index < ns[j][0].index
 	} else {
@@ -177,23 +177,23 @@ func (ns NodeSorter) Less(i, j int) bool {
 }
 
 // Swap swaps the elements with indexes i and j.
-func (ns NodeSorter) Swap(i, j int) {
+func (ns SortByNodeCount) Swap(i, j int) {
 	tmp := ns[i]
 	ns[i] = ns[j]
 	ns[j] = tmp
 }
 
-type VirtualNodeSorter []*Node
+type SortByIndex []*Node
 
-func (vns VirtualNodeSorter) Len() int {
+func (vns SortByIndex) Len() int {
 	return len(vns)
 }
 
-func (vns VirtualNodeSorter) Less(i, j int) bool {
+func (vns SortByIndex) Less(i, j int) bool {
 	return vns[i].index < vns[j].index
 }
 
-func (vns VirtualNodeSorter) Swap(i, j int) {
+func (vns SortByIndex) Swap(i, j int) {
 	tmp := vns[i]
 	vns[i] = vns[j]
 	vns[j] = tmp
