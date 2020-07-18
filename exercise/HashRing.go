@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cespare/xxhash/v2"
+	"github.com/satori/go.uuid"
 	"hash"
 	"hash/adler32"
 	"hash/crc32"
@@ -48,7 +49,8 @@ func test(ring *Ring) {
 	keyCount := 1000000
 	counter := make(map[int]int)
 	for i := 0; i < keyCount; i++ {
-		n, _ := ring.getNode(fmt.Sprintf("%s%d", "key", i))
+		//n, _ := ring.getNode(fmt.Sprintf("%s%d", "key", i))
+		n, _ := ring.getNode(uuid.NewV4().String())
 		if counter[n] == 0 {
 			counter[n] = 1
 		} else {
