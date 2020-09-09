@@ -23,7 +23,10 @@ func main() {
 	} else {
 		concurrent, _ = strconv.Atoi(flag.Arg(1))
 	}
-	requestCount := 100
+	var requestCount = 100
+	if flag.Arg(2) != "" {
+		requestCount, _ = strconv.Atoi(flag.Arg(2))
+	}
 	c := make(chan int, concurrent)
 	r := make(chan int, requestCount)
 	for i := 0; i < concurrent; i++ {
@@ -40,13 +43,14 @@ func main() {
 		}()
 	}
 	times := make([]int, 0)
+	sum := 0
 	for len(times) < requestCount {
 		t := <-r
 		//fmt.Println(t)
+		sum += t
 		times = append(times, t)
 	}
 	sort.Sort(sort.IntSlice(times))
-	fmt.Println(times)
-	fmt.Println("===============")
-	fmt.Println(times[95])
+	fmt.Println(fmt.Sprintf("avg:%d", sum/requestCount))
+	fmt.Println(fmt.Sprintf("tp95:%d", times[95]))
 }
